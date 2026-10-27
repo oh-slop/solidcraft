@@ -1,0 +1,11 @@
+{
+  "en": {
+    "cmd.sketch_drawing_bounds": "Drawing Size"
+  },
+  "ja": {
+    "cmd.sketch_drawing_bounds": "図面のサイズ"
+  },
+  "zh": {
+    "cmd.sketch_drawing_bounds": "图纸尺寸"
+  }
+}
