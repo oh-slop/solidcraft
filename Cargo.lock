@@ -4285,6 +4285,7 @@ dependencies = [
 name = "solidcraft-engine"
 version = "0.24.0"
 dependencies = [
+ "image",
  "log",
  "schemars",
  "serde",
@@ -4378,6 +4379,7 @@ dependencies = [
 name = "solidcraft-mcp"
 version = "0.24.0"
 dependencies = [
+ "image",
  "serde_json",
  "solidcraft-engine",
  "solidcraft-gpu",
