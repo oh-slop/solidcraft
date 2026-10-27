@@ -2,8 +2,10 @@
 
 import hashlib
 import importlib.util
+import os
 from pathlib import Path
 import plistlib
+import shutil
 import struct
 import subprocess
 import sys
@@ -14,12 +16,80 @@ import zipfile
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "ios" / "verify_ipa.py"
+BUILD_SCRIPT = SCRIPT.with_name("build.sh")
 SPEC = importlib.util.spec_from_file_location("solidcraft_verify_ipa", SCRIPT)
 VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 APP = "Payload/SolidCraft.app/"
 UIKIT = "/System/Library/Frameworks/UIKit.framework/UIKit"
 METAL = "/System/Library/Frameworks/Metal.framework/Metal"
+
+
+class IOSBuildScript(unittest.TestCase):
+    def test_no_machine_specific_tool_paths(self):
+        script = BUILD_SCRIPT.read_text()
+        self.assertNotRegex(script, r"/(?:home|Users)/[^/\"'\s]+/")
+        self.assertNotIn("/usr/bin/python3", script)
+
+    def test_missing_sdk_explains_how_to_enter_shell(self):
+        env = os.environ.copy()
+        env.pop("SDKROOT", None)
+        result = subprocess.run(["bash", str(BUILD_SCRIPT)], env=env,
+                                capture_output=True, text=True, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("nix develop ./packaging/ios", result.stderr)
+
+    def test_honours_caller_tools_and_sdk_environment(self):
+        # Exercise the real shell script in a disposable checkout, without
+        # requiring an SDK, compiling Rust, or writing into the real workspace.
+        with tempfile.TemporaryDirectory(prefix="ios build ") as temp:
+            root = Path(temp)
+            ios = root / "packaging" / "ios"
+            ios.mkdir(parents=True)
+            shutil.copy(BUILD_SCRIPT, ios / "build.sh")
+            (ios / "make-icons.py").write_text("print('icons')\n")
+            (ios / "verify_ipa.py").write_text("print('verified')\n")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            log = root / "tools.log"
+
+            def tool(name, body):
+                path = bin_dir / name
+                path.write_text("#!/bin/sh\nset -eu\n" + body)
+                path.chmod(0o755)
+
+            tool("python3", f'printf "python3:%s\\n" "$*" >> "$TEST_LOG"\nexec "{sys.executable}" "$@"\n')
+            tool("cargo", '''printf 'SDKROOT=%s\\nLINKER=%s\\n' "$SDKROOT" "$CARGO_TARGET_AARCH64_APPLE_IOS_LINKER" >> "$TEST_LOG"
+mkdir -p "$CARGO_TARGET_DIR/aarch64-apple-ios/release"
+touch "$CARGO_TARGET_DIR/aarch64-apple-ios/release/libsolidcraft_ios.a"
+''')
+            tool("xtool", '''printf 'xtool_SDKROOT=%s\\n' "${SDKROOT-unset}" >> "$TEST_LOG"
+printf 'xtool_CC=%s\\nxtool_CXX=%s\\n' "${CC-unset}" "${CXX-unset}" >> "$TEST_LOG"
+mkdir -p xtool
+python3 -c 'import zipfile; zipfile.ZipFile("xtool/SolidCraft.ipa", "w").close()'
+''')
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}",
+                "TEST_LOG": str(log),
+                "SDKROOT": str(root / "custom sdk"),
+                "CARGO_TARGET_AARCH64_APPLE_IOS_LINKER": str(root / "custom linker"),
+                "CC": "host-only-cc",
+                "CXX": "host-only-cxx",
+            })
+            result = subprocess.run(["bash", str(ios / "build.sh")], env=env,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            lines = log.read_text().splitlines()
+            self.assertIn(f"SDKROOT={env['SDKROOT']}", lines)
+            self.assertIn(f"LINKER={env['CARGO_TARGET_AARCH64_APPLE_IOS_LINKER']}", lines)
+            # SwiftPM must discover its SDK and clang, not inherit Cargo's
+            # SDKROOT or mkShell's host-only C/C++ compilers.
+            self.assertIn("xtool_SDKROOT=unset", lines)
+            self.assertIn("xtool_CC=unset", lines)
+            self.assertIn("xtool_CXX=unset", lines)
+            self.assertIn(f"python3:{ios / 'make-icons.py'}", lines)
+            self.assertIn(f"python3:{ios / 'verify_ipa.py'} {ios / 'xtool' / 'SolidCraft.ipa'}", lines)
 
 
 def dylib(name, command=0xC):

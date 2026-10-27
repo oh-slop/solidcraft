@@ -2,23 +2,23 @@
 set -euo pipefail
 here=$(dirname "$(realpath "$0")")
 root=$(realpath "$here/../..")
-export PATH="/home/exedev/toolchains/swift-6.3.3-RELEASE-ubuntu24.04/usr/bin:/home/exedev/toolchains/darwin-tools/bin:$HOME/.cargo/bin:$PATH"
-export SDKROOT=/home/exedev/toolchains/ios-sdk/iPhoneOS16.5.sdk
-export IPHONEOS_DEPLOYMENT_TARGET=16.4
-export CC_aarch64_apple_ios=clang
-export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER=/home/exedev/toolchains/darwin-tools/bin/ld64.lld
-# Bound memory/disk usage on this 2-core VM. These do not change the CAD feature set.
+: "${SDKROOT:?Run nix develop ./packaging/ios before building}"
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-16.4}"
+export CC_aarch64_apple_ios="${CC_aarch64_apple_ios:-clang}"
+export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="${CARGO_TARGET_AARCH64_APPLE_IOS_LINKER:-ld64.lld}"
+# Bound memory/disk usage by default. These do not change the CAD feature set.
 export CARGO_TARGET_DIR="$root/target"
-export CARGO_BUILD_JOBS=2
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
 export CARGO_PROFILE_RELEASE_DEBUG=0
 export CARGO_PROFILE_RELEASE_LTO=false
 export CARGO_PROFILE_RELEASE_OPT_LEVEL=2
-/usr/bin/python3 "$here/make-icons.py"
+python3 "$here/make-icons.py"
 cargo rustc --manifest-path "$root/Cargo.toml" -p solidcraft-ios --lib --release --locked --target aarch64-apple-ios -- --print native-static-libs
 mkdir -p "$here/Libs"
 cp "$root/target/aarch64-apple-ios/release/libsolidcraft_ios.a" "$here/Libs/"
 # Keep cwd inside this subshell; xtool resolves Package.swift relative to it.
-(cd "$here" && env -u SDKROOT xtool dev build --configuration release --ipa)
+# SwiftPM must select the SDK's clang, not mkShell's Linux CC/CXX.
+(cd "$here" && env -u SDKROOT -u CC -u CXX xtool dev build --configuration release --ipa)
 # xtool stores ZIP entries uncompressed. Deflate them without changing any
 # bundle bytes, permissions or metadata, to reduce the sideload download.
 python3 - "$here/xtool/SolidCraft.ipa" <<'PY'

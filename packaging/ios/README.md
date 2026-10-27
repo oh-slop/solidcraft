@@ -37,45 +37,37 @@ provisioning step appropriate to the destination device.
   static IPA validation do not demonstrate that the app launches, renders or
   imports/exports correctly on an iPhone or iPad.
 
-## Build on the configured Linux VM
+## Build on Linux with Nix
 
-Run from the repository root:
+On an **x86_64-linux** host with Nix and flakes enabled, run from the repository
+root:
 
 ```sh
-rustup target add aarch64-apple-ios
-bash packaging/ios/build.sh
+nix develop ./packaging/ios --command bash packaging/ios/build.sh
 ```
 
-The build-time icon step uses `/usr/bin/python3` and Pillow (`python3-pil`).
-It sizes the existing attributed SolidCraft app mark into ignored
-`target/ios-icons/`; it does not introduce new artwork.
+The iOS flake supplies Swift 6.3.3, xtool 1.24.0, Darwin cross-tools 1.1.0,
+Rust 1.99.1 with the `aarch64-apple-ios` and `wasm32-unknown-unknown` targets, and
+Python 3 with Pillow. It also supplies and registers the Swift cross SDK in
+`target/ios-swift-sdks/` within this repository; no separate Swift SDK
+registration or VM-specific setup is required. Nix may need network access on
+the first run to fetch the pinned inputs. The Theos SDK directory is named
+`iPhoneOS16.5.sdk`, but identifies itself internally as **iPhoneOS 16.4**;
+the app's deployment target and packaged minimum are also 16.4.
 
-`build.sh` uses the shared Cargo workspace's `solidcraft-ios` static library and
+The SDK is subject to Apple's Xcode and Apple SDKs Agreement, as documented in
+the pinned Theos SDK source's `LICENSE.md`; it is a build input, not bundled
+with the app. The shell scopes `XDG_CONFIG_HOME` to `target/ios-swift-sdks/` so
+neither xtool nor SwiftPM uses or modifies your normal Swift SDK registration.
+xtool's AppImage is extracted and patched for Nix rather than mounted, so
+building does not require FUSE.
+
+The icon step uses Python and Pillow to size the existing attributed SolidCraft
+app mark into ignored `target/ios-icons/`; it does not introduce new artwork.
+`build.sh` builds the shared Cargo workspace's `solidcraft-ios` static library,
 then packages the Swift host with `xtool dev build --configuration release --ipa`.
-It uses the repository `target/` directory and bounds compilation to two jobs.
-The script relies on the tools and Swift SDK configuration already installed on
-this VM; it is not a portable toolchain installer:
-
-| Component | Configured version/location |
-| --- | --- |
-| Swift | 6.3.3, `/home/exedev/toolchains/swift-6.3.3-RELEASE-ubuntu24.04` |
-| xtool | 1.24.0, installed from `/home/exedev/toolchains/xtool-1.24.0`, on `PATH` |
-| Official Darwin cross-tools | 1.1.0, `/home/exedev/toolchains/darwin-tools` |
-| Theos iPhoneOS SDK directory | `/home/exedev/toolchains/ios-sdk/iPhoneOS16.5.sdk` |
-| SDK's internal identity | `iphoneos16.4` / iOS 16.4 in `SDKSettings.json` |
-| Swift SDK target triple | `arm64-apple-ios`, registered in `darwin.artifactbundle` |
-| Deployment minimum / packaged identity | iPhoneOS 16.4 |
-
-The existing
-`/home/exedev/wgpu-in-app/Apple/xtool/configure-sdk.py` configured the Swift SDK
-artifact bundle in `~/.swiftpm/swift-sdks/darwin.artifactbundle` and Swift resources
-in `/home/exedev/toolchains/ios-resources-6.3`. It supplies the Theos SDK's missing
-Dispatch/os API notes and configures the Darwin linker and librarian. Recreate
-that setup before building on another machine; simply setting `SDKROOT` is not
-sufficient for the Swift cross-build. Despite its directory name, this SDK
-identifies itself internally as **16.4**, not 16.5. The app's deployment target
-and packaged minimum are also **16.4**.
-
+It uses the repository's `target/` directory and two Cargo jobs by default;
+set `CARGO_BUILD_JOBS` to override that limit.
 The cross-linker is `ld64.lld`, with ad-hoc signing disabled. lld warns that iOS
 support is experimental; this warning is not evidence of device compatibility.
 The package includes `LICENSE-MIT`, `LICENSE-APACHE` and
@@ -85,14 +77,20 @@ static verifier. The output is `packaging/ios/xtool/SolidCraft.ipa`.
 
 ## Static verification and regression tests
 
-Locate the generated IPA under `packaging/ios/` and pass its actual path:
+From the repository root, verify the generated IPA and run the regression
+tests:
 
 ```sh
-find packaging/ios -name '*.ipa' -print
-python3 packaging/ios/verify_ipa.py /path/to/SolidCraft.ipa
+nix flake check ./packaging/ios
+python3 packaging/ios/verify_ipa.py packaging/ios/xtool/SolidCraft.ipa
 python3 -m unittest discover -s packaging/tests -p 'test_ios.py' -v
-CARGO_TARGET_DIR=target/path-tests cargo test --locked -p solidcraft-ios --lib
+CARGO_TARGET_DIR=target/path-tests cargo test --locked --profile ci -p solidcraft-ios --lib
 ```
+
+The flake check compiles and runs a small Linux Swift program, evaluates a
+Swift package manifest, and links a small UIKit executable with a C bridge for
+iPhoneOS inside Nix's build sandbox. It uses a fresh home directory and SDK registration;
+neither an Apple device nor the full Rust CAD build is needed for that check.
 
 The verifier uses only Python's standard library. It checks ZIP CRC integrity,
 bundle layout and identifier, deployment/platform metadata, both Files-sharing
@@ -116,17 +114,10 @@ Repository policy requires **`cargo xtask ci` before every commit**. Run the
 packaging tests in addition to that gate, and record actual cross-build,
 verification and CI outcomes separately; none is implied by these instructions.
 
-### Checks performed on this VM
+### Reproducible checks
 
-- Native cross-build and unsigned arm64/iPhoneOS 16.4 package verification:
-  **passed**. Physical-device execution remains untested.
-- Host-side save-path tests: **3 passed**.
-- Synthetic IPA verifier regression tests: **17 passed**.
-- `cargo fmt --all -- --check`, `shellcheck packaging/ios/build.sh` and
-  `git diff --check`: passed.
-- `cargo xtask ci`: formatting, assets, icons, licences, sorted lists, skills,
-  layering and UI-container gates passed. The full-workspace clippy stage was
-  stopped at four-minute and two-minute resource budgets while checking
-  dependencies.
-  **Full CI, the UI recovery regression, and wasm validation are not claimed to
-  have passed.**
+Run the build above, then run the static verifier and regression tests using the
+commands in this section. The verifier runs automatically at the end of a
+successful build; rerun it separately to inspect an existing IPA. Record the
+actual outcomes of the cross-build, tests and CI independently. A successful
+static check does not establish physical-device compatibility.
