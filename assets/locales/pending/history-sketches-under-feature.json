@@ -1,0 +1,23 @@
+{
+  "en": {
+    "prefs.history_sketches": "Sketches",
+    "prefs.history_sketches_in_order": "In order",
+    "prefs.history_sketches_note": "With Sketches set to Under their feature, the History at the left lists each sketch one level in, under the first feature built from it, whenever it is wide enough for names. The timeline at the bottom always keeps the creation order.",
+    "prefs.history_sketches_under_feature": "Under their feature",
+    "ui.history_sketch_listed_under": "Listed under {feature}"
+  },
+  "ja": {
+    "prefs.history_sketches": "スケッチ",
+    "prefs.history_sketches_in_order": "作成順",
+    "prefs.history_sketches_note": "スケッチ：「フィーチャーの下」では、左側の履歴に名前が表示される幅があるとき、スケッチをそれから作成した最初のフィーチャーの下に 1 段字下げして表示します。下部のタイムラインは常に作成順です。",
+    "prefs.history_sketches_under_feature": "フィーチャーの下",
+    "ui.history_sketch_listed_under": "{feature} の下に表示"
+  },
+  "zh": {
+    "prefs.history_sketches": "草图",
+    "prefs.history_sketches_in_order": "按创建顺序",
+    "prefs.history_sketches_note": "草图：选择“位于其特征下”后，左侧历史在宽度足以显示名称时，会将草图缩进一级，列在由其创建的第一个特征下。底部时间轴始终保持创建顺序。",
+    "prefs.history_sketches_under_feature": "位于其特征下",
+    "ui.history_sketch_listed_under": "列在 {feature} 下"
+  }
+}

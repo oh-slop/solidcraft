@@ -68,6 +68,7 @@ pub mod frame_rate;
 pub mod gizmo;
 pub mod gpu;
 pub mod help;
+pub(crate) mod history_rows;
 #[cfg(test)]
 mod hole_direction_ui_tests;
 pub(crate) mod hole_place;
